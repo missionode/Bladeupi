@@ -1,6 +1,6 @@
 // upi-transaction-library.js
 // A small JavaScript library for handling UPI transaction cases, statuses, and error codes.
-// Updated version: Added edge case handling function to suggest actions based on error codes.
+// Updated version: Added mandate-specific error codes and a simulation function for mandate registration.
 
 // Enum-like object for UPI Transaction Statuses
 const UPIStatus = Object.freeze({
@@ -19,7 +19,7 @@ const UPITransactionType = Object.freeze({
   ASBA: "UPI for ASBA"
 });
 
-// Object mapping error codes to their details: [description, type, status, handling]
+// Object mapping general UPI error codes to their details: [description, type, status, handling]
 const UPIErrorCodes = Object.freeze({
   "00": ["Approved or completed successfully", "Success", UPIStatus.SUCCESS, "No action needed."],
   "000": ["Success (alternate)", "Success", UPIStatus.SUCCESS, "Same as 00."],
@@ -106,22 +106,73 @@ const UPIErrorCodes = Object.freeze({
   "YB": ["Lost or stolen card (beneficiary)", "Business", UPIStatus.REJECTED, "Same."],
   "YC": ["Do not honour (remitter)", "Business", UPIStatus.REJECTED, "Bank decline."],
   "YD": ["Do not honour (beneficiary)", "Business", UPIStatus.REJECTED, "Same."]
-  // Additional mandate-specific codes like AP01 can be added in future updates if needed.
 });
 
-// Function to get information about a UPI error code
+// Object mapping mandate-specific error codes (e.g., for eNACH/UPI Autopay registration) to their details: [description, type, status, handling]
+const MandateErrorCodes = Object.freeze({
+  "AP01": ["Account blocked", "Business", UPIStatus.REJECTED, "Account is blocked; contact bank."],
+  "AP02": ["Account closed", "Business", UPIStatus.REJECTED, "Account is closed; use another account."],
+  "AP03": ["Account frozen", "Business", UPIStatus.REJECTED, "Account frozen; contact bank."],
+  "AP04": ["Account inoperative", "Business", UPIStatus.REJECTED, "Account dormant; activate with bank."],
+  "AP05": ["No such account", "Business", UPIStatus.REJECTED, "Invalid account; check details."],
+  "AP06": ["Not a CBS account no. or old account no. represented with CBS no", "Business", UPIStatus.REJECTED, "Invalid account format; update to CBS."],
+  "AP07": ["Refer to the branch – KYC not completed", "Business", UPIStatus.REJECTED, "Complete KYC at branch."],
+  "AP08": ["Account holder name mismatch with CBS", "Business", UPIStatus.REJECTED, "Name mismatch; verify details."],
+  "AP09": ["Account type in mandate is different from CBS", "Business", UPIStatus.REJECTED, "Account type mismatch; correct it."],
+  "AP10": ["Amount exceeds e-mandate limit", "Business", UPIStatus.REJECTED, "Exceeds limit; reduce amount."],
+  "AP11": ["Authentication failed", "Technical", UPIStatus.REJECTED, "Auth failed; retry authentication."],
+  "AP12": ["Amount of EMI more than limit allowed for the account", "Business", UPIStatus.REJECTED, "EMI exceeds limit; adjust."],
+  "AP13": ["Invalid monthly EMI amount. Full loan amount mentioned", "Technical", UPIStatus.REJECTED, "Invalid EMI; specify correct amount."],
+  "AP14": ["Invalid user credentials", "Technical", UPIStatus.REJECTED, "Wrong credentials; re-enter."],
+  "AP15": ["Mandate not registered – not maintaining required balance", "Business", UPIStatus.REJECTED, "Insufficient balance for registration."],
+  "AP16": ["Mandate not registered – minor account", "Business", UPIStatus.REJECTED, "Minor account; not allowed."],
+  "AP17": ["Mandate not registered – NRE account", "Business", UPIStatus.REJECTED, "NRE account; not supported."],
+  "AP18": ["Mandate registration not allowed for CC account", "Business", UPIStatus.REJECTED, "Credit card account; use savings/current."],
+  "AP19": ["Mandate registration not allowed for PF account", "Business", UPIStatus.REJECTED, "PF account; not supported."],
+  "AP20": ["Mandate registration not allowed for PPF account", "Business", UPIStatus.REJECTED, "PPF account; not supported."],
+  "AP21": ["Payment stopped by attachment order", "Business", UPIStatus.REJECTED, "Stopped by order; contact bank."],
+  "AP22": ["Payment stopped by court order", "Business", UPIStatus.REJECTED, "Court order; resolve legally."],
+  "AP23": ["Transaction rejected or cancelled by the customer", "Business", UPIStatus.REJECTED, "Customer cancelled; reinitiate if needed."],
+  "AP24": ["Account not in regular status", "Business", UPIStatus.REJECTED, "Irregular account; regularize."],
+  "AP25": ["Withdrawal stopped owing to insolvency of account", "Business", UPIStatus.REJECTED, "Insolvency; contact bank."],
+  "AP26": ["Withdrawal stopped owing to lunacy of account holder", "Business", UPIStatus.REJECTED, "Legal issue; resolve."],
+  "AP27": ["Invalid frequency", "Technical", UPIStatus.REJECTED, "Wrong frequency; correct mandate."],
+  "AP28": ["Mandate registration failed – please contact your home branch", "Business", UPIStatus.REJECTED, "Contact branch for assistance."],
+  "AP29": ["Technical errors or connectivity issues at backend", "Technical", UPIStatus.REJECTED, "Backend issue; retry later."],
+  "AP30": ["Browser closed by customer mid-transaction", "Business", UPIStatus.REJECTED, "Transaction aborted; restart."],
+  "AP31": ["Mandate registration not allowed for joint account", "Business", UPIStatus.REJECTED, "Joint account; use individual."],
+  "AP32": ["Mandate registration not allowed for wallet account", "Business", UPIStatus.REJECTED, "Wallet; use bank account."],
+  "AP33": ["User rejected the transaction on pre-login page", "Business", UPIStatus.REJECTED, "User rejected; try again."],
+  "AP34": ["Account number not registered with netbanking facility", "Business", UPIStatus.REJECTED, "Enable netbanking."],
+  "AP35": ["Debit card validation failed – invalid card number", "Technical", UPIStatus.REJECTED, "Invalid card; check number."],
+  "AP36": ["Debit card validation failed – invalid expiry date", "Technical", UPIStatus.REJECTED, "Invalid expiry; check date."],
+  "AP37": ["Debit card validation failed – invalid PIN", "Technical", UPIStatus.REJECTED, "Wrong PIN; retry."],
+  "AP38": ["Debit card validation failed – invalid CVV", "Technical", UPIStatus.REJECTED, "Wrong CVV; check."],
+  "AP39": ["OTP invalid", "Technical", UPIStatus.REJECTED, "Invalid OTP; regenerate."],
+  "AP40": ["Maximum tries exceeded for OTP", "Technical", UPIStatus.REJECTED, "OTP tries exceeded; wait and retry."],
+  "AP41": ["Time expired for OTP", "Technical", UPIStatus.REJECTED, "OTP expired; regenerate."],
+  "AP42": ["Debit card not activated", "Business", UPIStatus.REJECTED, "Activate card."],
+  "AP43": ["Debit card blocked", "Business", UPIStatus.REJECTED, "Card blocked; unblock."],
+  "AP44": ["Debit card hotlisted", "Business", UPIStatus.REJECTED, "Card hotlisted; report lost."],
+  "AP45": ["Debit card expired", "Business", UPIStatus.REJECTED, "Card expired; renew."],
+  "AP46": ["No response received from customer during transaction", "Business", UPIStatus.REJECTED, "No response; retry transaction."],
+  "AP47": ["Account number registered for only view rights in netbanking", "Business", UPIStatus.REJECTED, "View-only; enable transactions."],
+  "AP48": ["Aadhaar number does not match with debtor", "Business", UPIStatus.REJECTED, "Aadhaar mismatch; verify."]
+  // Additional mandate presentation codes can be added if needed, but many overlap with general UPI codes.
+});
+
+// Function to get information about a UPI error code (checks both general and mandate codes)
 function getCodeInfo(code) {
   const upperCode = code.toUpperCase();
-  if (UPIErrorCodes[upperCode]) {
-    const [description, type, status, handling] = UPIErrorCodes[upperCode];
+  let codes = {...UPIErrorCodes, ...MandateErrorCodes};
+  if (codes[upperCode]) {
+    const [description, type, status, handling] = codes[upperCode];
     return { code: upperCode, description, type, status, handling };
   }
   return { code: upperCode, description: "Unknown", type: "Technical", status: UPIStatus.REJECTED, handling: "Contact support" };
 }
 
-// Function to simulate a UPI transaction
-// Parameters: transactionType (from UPITransactionType), successRate (0-1, default 0.8)
-// Returns: { transactionType, code, ...getCodeInfo(code) }
+// Function to simulate a UPI transaction (general)
 function simulateTransaction(transactionType = UPITransactionType.PAY, successRate = 0.8) {
   if (!Object.values(UPITransactionType).includes(transactionType)) {
     throw new Error("Invalid transaction type");
@@ -132,7 +183,6 @@ function simulateTransaction(transactionType = UPITransactionType.PAY, successRa
   if (Math.random() < successRate) {
     code = "00"; // Success
   } else {
-    // Random failure code, excluding success codes
     const failureCodes = codes.filter(c => c !== "00" && c !== "000");
     code = failureCodes[Math.floor(Math.random() * failureCodes.length)];
   }
@@ -141,9 +191,22 @@ function simulateTransaction(transactionType = UPITransactionType.PAY, successRa
   return { transactionType, ...info };
 }
 
+// Function to simulate a mandate registration (uses mandate-specific codes)
+function simulateMandateRegistration(successRate = 0.8) {
+  const codes = Object.keys(MandateErrorCodes);
+  let code;
+  if (Math.random() < successRate) {
+    code = "00"; // Use general success for registration
+    const info = getCodeInfo(code);
+    return { transactionType: "Mandate Registration", ...info };
+  } else {
+    code = codes[Math.floor(Math.random() * codes.length)];
+    const info = getCodeInfo(code);
+    return { transactionType: "Mandate Registration", ...info };
+  }
+}
+
 // Function to handle edge cases by suggesting actions
-// Parameters: code (string)
-// Returns: { code, suggestedAction: string }
 function handleEdgeCase(code) {
   const info = getCodeInfo(code);
   let suggestedAction = info.handling;
@@ -160,7 +223,7 @@ function handleEdgeCase(code) {
 }
 
 // Example usage:
-// console.log(handleEdgeCase("091"));
-// Possible Output: { code: '091', suggestedAction: 'Wait; do not reinitiate. Monitor for resolution.' }
+// console.log(simulateMandateRegistration(0.5));
+// Possible Output: { transactionType: 'Mandate Registration', code: 'AP01', description: 'Account blocked', type: 'Business', status: 'Rejected', handling: 'Account is blocked; contact bank.' }
 
-module.exports = { UPIStatus, UPITransactionType, UPIErrorCodes, getCodeInfo, simulateTransaction, handleEdgeCase };
+module.exports = { UPIStatus, UPITransactionType, UPIErrorCodes, MandateErrorCodes, getCodeInfo, simulateTransaction, simulateMandateRegistration, handleEdgeCase };
