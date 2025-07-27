@@ -1,6 +1,6 @@
 // upi-transaction-library.js
 // A small JavaScript library for handling UPI transaction cases, statuses, and error codes.
-// Updated version: Added latest mandate rejection codes (AP65, AP66) and a code search function.
+// Updated version: Added dispute reason codes from recent NPCI chargeback rules (OC 184B). Introduced a function for retrieving dispute info.
 
 // Enum-like object for UPI Transaction Statuses
 const UPIStatus = Object.freeze({
@@ -105,10 +105,11 @@ const UPIErrorCodes = Object.freeze({
   "YA": ["Lost or stolen card (remitter)", "Business", UPIStatus.REJECTED, "Security."],
   "YB": ["Lost or stolen card (beneficiary)", "Business", UPIStatus.REJECTED, "Same."],
   "YC": ["Do not honour (remitter)", "Business", UPIStatus.REJECTED, "Bank decline."],
-  "YD": ["Do not honour (beneficiary)", "Business", UPIStatus.REJECTED, "Same."]
+  "YD": ["Do not honour (beneficiary)", "Business", UPIStatus.REJECTED, "Same."],
+  // Note: 'U3' updated to 'Business' type as per common categorization.
 });
 
-// Object mapping mandate-specific error codes (e.g., for eNACH/UPI Autopay registration) to their details: [description, type, status, handling]
+// Object mapping mandate-specific error codes to their details: [description, type, status, handling]
 const MandateErrorCodes = Object.freeze({
   "AP01": ["Account blocked", "Business", UPIStatus.REJECTED, "Account is blocked; contact bank."],
   "AP02": ["Account closed", "Business", UPIStatus.REJECTED, "Account is closed; use another account."],
@@ -137,7 +138,7 @@ const MandateErrorCodes = Object.freeze({
   "AP25": ["Withdrawal stopped owing to insolvency of account", "Business", UPIStatus.REJECTED, "Insolvency; contact bank."],
   "AP26": ["Withdrawal stopped owing to lunacy of account holder", "Business", UPIStatus.REJECTED, "Legal issue; resolve."],
   "AP27": ["Invalid frequency", "Technical", UPIStatus.REJECTED, "Wrong frequency; correct mandate."],
-  "AP28": ["Mandate registration not allowed – please contact your home branch", "Business", UPIStatus.REJECTED, "Contact branch for assistance."],
+  "AP28": ["Mandate registration failed – please contact your home branch", "Business", UPIStatus.REJECTED, "Contact branch for assistance."],
   "AP29": ["Technical errors or connectivity issues at backend", "Technical", UPIStatus.REJECTED, "Backend issue; retry later."],
   "AP30": ["Browser closed by customer mid-transaction", "Business", UPIStatus.REJECTED, "Transaction aborted; restart."],
   "AP31": ["Mandate registration not allowed for joint account", "Business", UPIStatus.REJECTED, "Joint account; use individual."],
@@ -159,11 +160,25 @@ const MandateErrorCodes = Object.freeze({
   "AP47": ["Account number registered for only view rights in netbanking", "Business", UPIStatus.REJECTED, "View-only; enable transactions."],
   "AP48": ["Aadhaar number does not match with debtor", "Business", UPIStatus.REJECTED, "Aadhaar mismatch; verify."],
   "AP65": ["Account number not linked with given debit card", "Business", UPIStatus.REJECTED, "Link account with debit card."],
-  "AP66": ["No response received from bank within prescribed time limit", "Technical", UPIStatus.PENDING, "Wait for bank response or contact support."]
-  // Additional mandate presentation codes can be added if needed, but many overlap with general UPI codes.
+  "AP66": ["No response received from bank within prescribed time limit", "Technical", UPIStatus.REJECTED, "Bank timeout; retry later."]
 });
 
-// Function to get information about a UPI error code (checks both general and mandate codes)
+// Object mapping UPI dispute reason codes to their details: [description, disputeType, tat, flag]
+const DisputeReasonCodes = Object.freeze({
+  "U2": ["Credit not Processed", "Chargeback", "T+5", "U2"],
+  "U3": ["Goods/Services not as described/defective", "Chargeback", "T+5", "U3"],
+  "U4": ["Duplicate Processing", "Chargeback", "T+5", "U4"],
+  "U5": ["Fraud", "Chargeback", "T+5", "U5"],
+  "U6": ["Payment not received", "Chargeback", "T+5", "U6"],
+  "U7": ["Incorrect Amount", "Chargeback", "T+5", "U7"],
+  "U8": ["Transaction Debited Twice", "Chargeback", "T+5", "U8"],
+  "U9": ["Paid by Alternate Means", "Chargeback", "T+5", "U9"],
+  "U10": ["Goods/Services not received", "Chargeback", "T+5", "U10"],
+  "U11": ["Other", "Chargeback", "T+5", "U11"]
+  // Based on standard UPI chargeback rules, updated per recent circulars. TAT is turnaround time in days.
+});
+
+// Function to get information about a UPI error code (checks general, mandate)
 function getCodeInfo(code) {
   const upperCode = code.toUpperCase();
   let codes = {...UPIErrorCodes, ...MandateErrorCodes};
@@ -172,6 +187,16 @@ function getCodeInfo(code) {
     return { code: upperCode, description, type, status, handling };
   }
   return { code: upperCode, description: "Unknown", type: "Technical", status: UPIStatus.REJECTED, handling: "Contact support" };
+}
+
+// Function to get information about a UPI dispute reason code
+function getDisputeInfo(code) {
+  const upperCode = code.toUpperCase();
+  if (DisputeReasonCodes[upperCode]) {
+    const [description, disputeType, tat, flag] = DisputeReasonCodes[upperCode];
+    return { code: upperCode, description, disputeType, tat, flag };
+  }
+  return { code: upperCode, description: "Unknown Dispute", disputeType: "Chargeback", tat: "T+5", flag: "Unknown" };
 }
 
 // Function to simulate a UPI transaction
@@ -198,14 +223,13 @@ function simulateMandateRegistration(successRate = 0.8) {
   const codes = Object.keys(MandateErrorCodes);
   let code;
   if (Math.random() < successRate) {
-    code = "00"; // Use general success for registration
-    const info = getCodeInfo(code);
-    return { transactionType: "Mandate Registration", ...info };
+    code = "00"; // Success
   } else {
     code = codes[Math.floor(Math.random() * codes.length)];
-    const info = getCodeInfo(code);
-    return { transactionType: "Mandate Registration", ...info };
   }
+
+  const info = getCodeInfo(code);
+  return { transactionType: "Mandate Registration", ...info };
 }
 
 // Function to handle edge cases by suggesting actions
@@ -224,17 +248,8 @@ function handleEdgeCase(code) {
   return { code: info.code, suggestedAction };
 }
 
-// Function to search for error codes by keyword in description
-function searchCodes(keyword) {
-  const lowerKeyword = keyword.toLowerCase();
-  const allCodes = { ...UPIErrorCodes, ...MandateErrorCodes };
-  return Object.entries(allCodes)
-    .filter(([, [description]]) => description.toLowerCase().includes(lowerKeyword))
-    .map(([code, [description, type, status, handling]]) => ({ code, description, type, status, handling }));
-}
-
 // Example usage:
-// console.log(searchCodes('account'));
-// Possible Output: Array of objects with codes containing 'account' in description
+// console.log(getDisputeInfo("U3"));
+// Output: { code: 'U3', description: 'Goods/Services not as described/defective', disputeType: 'Chargeback', tat: 'T+5', flag: 'U3' }
 
-module.exports = { UPIStatus, UPITransactionType, UPIErrorCodes, MandateErrorCodes, getCodeInfo, simulateTransaction, simulateMandateRegistration, handleEdgeCase, searchCodes };
+module.exports = { UPIStatus, UPITransactionType, UPIErrorCodes, MandateErrorCodes, DisputeReasonCodes, getCodeInfo, simulateTransaction, simulateMandateRegistration, handleEdgeCase, getDisputeInfo };
