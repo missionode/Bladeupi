@@ -1,6 +1,6 @@
 // upi-transaction-library.js
 // A small JavaScript library for handling UPI transaction cases, statuses, and error codes.
-// Updated version: Added transaction simulation function for mocking UPI flows.
+// Updated version: Added edge case handling function to suggest actions based on error codes.
 
 // Enum-like object for UPI Transaction Statuses
 const UPIStatus = Object.freeze({
@@ -132,16 +132,35 @@ function simulateTransaction(transactionType = UPITransactionType.PAY, successRa
   if (Math.random() < successRate) {
     code = "00"; // Success
   } else {
-    // Random failure code, excluding success
-    code = codes[Math.floor(Math.random() * (codes.length - 1)) + 1];
+    // Random failure code, excluding success codes
+    const failureCodes = codes.filter(c => c !== "00" && c !== "000");
+    code = failureCodes[Math.floor(Math.random() * failureCodes.length)];
   }
 
   const info = getCodeInfo(code);
   return { transactionType, ...info };
 }
 
-// Example usage:
-// console.log(simulateTransaction(UPITransactionType.COLLECT));
-// Possible Output: { transactionType: 'Collect Request (Pull)', code: '091', description: 'Timeout', type: 'Technical', status: 'Pending', handling: 'Wait; do not reinitiate.' }
+// Function to handle edge cases by suggesting actions
+// Parameters: code (string)
+// Returns: { code, suggestedAction: string }
+function handleEdgeCase(code) {
+  const info = getCodeInfo(code);
+  let suggestedAction = info.handling;
 
-module.exports = { UPIStatus, UPITransactionType, UPIErrorCodes, getCodeInfo, simulateTransaction };
+  if (info.status === UPIStatus.PENDING) {
+    suggestedAction += " Monitor for resolution.";
+  } else if (info.type.includes("Technical") && info.status === UPIStatus.REJECTED) {
+    suggestedAction += " Retry after a short delay.";
+  } else if (info.type.includes("Business")) {
+    suggestedAction += " User intervention required; do not retry automatically.";
+  }
+
+  return { code: info.code, suggestedAction };
+}
+
+// Example usage:
+// console.log(handleEdgeCase("091"));
+// Possible Output: { code: '091', suggestedAction: 'Wait; do not reinitiate. Monitor for resolution.' }
+
+module.exports = { UPIStatus, UPITransactionType, UPIErrorCodes, getCodeInfo, simulateTransaction, handleEdgeCase };
