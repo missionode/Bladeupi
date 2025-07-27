@@ -1,13 +1,22 @@
 // upi-transaction-library.js
 // A small JavaScript library for handling UPI transaction cases, statuses, and error codes.
-// This is the initial version, starting from a basic implementation.
-// It includes enums-like objects for statuses and error codes, and functions to interpret codes.
+// Updated version: Added transaction simulation function for mocking UPI flows.
 
 // Enum-like object for UPI Transaction Statuses
 const UPIStatus = Object.freeze({
   SUCCESS: "Processed",
   PENDING: "Pending",
   REJECTED: "Rejected"
+});
+
+// Enum-like object for UPI Transaction Types
+const UPITransactionType = Object.freeze({
+  PAY: "Pay Request (Push)",
+  COLLECT: "Collect Request (Pull)",
+  INTENT: "UPI Intent-Based Payment",
+  AUTOPAY: "UPI Autopay",
+  LITE: "UPI Lite",
+  ASBA: "UPI for ASBA"
 });
 
 // Object mapping error codes to their details: [description, type, status, handling]
@@ -105,14 +114,34 @@ function getCodeInfo(code) {
   const upperCode = code.toUpperCase();
   if (UPIErrorCodes[upperCode]) {
     const [description, type, status, handling] = UPIErrorCodes[upperCode];
-    return { description, type, status, handling };
+    return { code: upperCode, description, type, status, handling };
   }
-  return { description: "Unknown", type: "Technical", status: UPIStatus.REJECTED, handling: "Contact support" };
+  return { code: upperCode, description: "Unknown", type: "Technical", status: UPIStatus.REJECTED, handling: "Contact support" };
+}
+
+// Function to simulate a UPI transaction
+// Parameters: transactionType (from UPITransactionType), successRate (0-1, default 0.8)
+// Returns: { transactionType, code, ...getCodeInfo(code) }
+function simulateTransaction(transactionType = UPITransactionType.PAY, successRate = 0.8) {
+  if (!Object.values(UPITransactionType).includes(transactionType)) {
+    throw new Error("Invalid transaction type");
+  }
+
+  const codes = Object.keys(UPIErrorCodes);
+  let code;
+  if (Math.random() < successRate) {
+    code = "00"; // Success
+  } else {
+    // Random failure code, excluding success
+    code = codes[Math.floor(Math.random() * (codes.length - 1)) + 1];
+  }
+
+  const info = getCodeInfo(code);
+  return { transactionType, ...info };
 }
 
 // Example usage:
-// console.log(getCodeInfo("04"));
-// Output: { description: 'Technical decline / Balance insufficient', type: 'Business/Technical', status: 'Rejected', handling: 'Insufficient funds; top up account.' }
+// console.log(simulateTransaction(UPITransactionType.COLLECT));
+// Possible Output: { transactionType: 'Collect Request (Pull)', code: '091', description: 'Timeout', type: 'Technical', status: 'Pending', handling: 'Wait; do not reinitiate.' }
 
-// This is the starting point: a basic library with code lookup. Future updates can add simulation functions, API wrappers, or more features.
-module.exports = { UPIStatus, UPIErrorCodes, getCodeInfo };
+module.exports = { UPIStatus, UPITransactionType, UPIErrorCodes, getCodeInfo, simulateTransaction };
