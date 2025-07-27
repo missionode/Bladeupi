@@ -1,6 +1,6 @@
 // upi-transaction-library.js
 // A small JavaScript library for handling UPI transaction cases, statuses, and error codes.
-// Updated version: Added mandate-specific error codes and a simulation function for mandate registration.
+// Updated version: Added latest mandate rejection codes (AP65, AP66) and a code search function.
 
 // Enum-like object for UPI Transaction Statuses
 const UPIStatus = Object.freeze({
@@ -137,7 +137,7 @@ const MandateErrorCodes = Object.freeze({
   "AP25": ["Withdrawal stopped owing to insolvency of account", "Business", UPIStatus.REJECTED, "Insolvency; contact bank."],
   "AP26": ["Withdrawal stopped owing to lunacy of account holder", "Business", UPIStatus.REJECTED, "Legal issue; resolve."],
   "AP27": ["Invalid frequency", "Technical", UPIStatus.REJECTED, "Wrong frequency; correct mandate."],
-  "AP28": ["Mandate registration failed – please contact your home branch", "Business", UPIStatus.REJECTED, "Contact branch for assistance."],
+  "AP28": ["Mandate registration not allowed – please contact your home branch", "Business", UPIStatus.REJECTED, "Contact branch for assistance."],
   "AP29": ["Technical errors or connectivity issues at backend", "Technical", UPIStatus.REJECTED, "Backend issue; retry later."],
   "AP30": ["Browser closed by customer mid-transaction", "Business", UPIStatus.REJECTED, "Transaction aborted; restart."],
   "AP31": ["Mandate registration not allowed for joint account", "Business", UPIStatus.REJECTED, "Joint account; use individual."],
@@ -157,7 +157,9 @@ const MandateErrorCodes = Object.freeze({
   "AP45": ["Debit card expired", "Business", UPIStatus.REJECTED, "Card expired; renew."],
   "AP46": ["No response received from customer during transaction", "Business", UPIStatus.REJECTED, "No response; retry transaction."],
   "AP47": ["Account number registered for only view rights in netbanking", "Business", UPIStatus.REJECTED, "View-only; enable transactions."],
-  "AP48": ["Aadhaar number does not match with debtor", "Business", UPIStatus.REJECTED, "Aadhaar mismatch; verify."]
+  "AP48": ["Aadhaar number does not match with debtor", "Business", UPIStatus.REJECTED, "Aadhaar mismatch; verify."],
+  "AP65": ["Account number not linked with given debit card", "Business", UPIStatus.REJECTED, "Link account with debit card."],
+  "AP66": ["No response received from bank within prescribed time limit", "Technical", UPIStatus.PENDING, "Wait for bank response or contact support."]
   // Additional mandate presentation codes can be added if needed, but many overlap with general UPI codes.
 });
 
@@ -172,7 +174,7 @@ function getCodeInfo(code) {
   return { code: upperCode, description: "Unknown", type: "Technical", status: UPIStatus.REJECTED, handling: "Contact support" };
 }
 
-// Function to simulate a UPI transaction (general)
+// Function to simulate a UPI transaction
 function simulateTransaction(transactionType = UPITransactionType.PAY, successRate = 0.8) {
   if (!Object.values(UPITransactionType).includes(transactionType)) {
     throw new Error("Invalid transaction type");
@@ -191,7 +193,7 @@ function simulateTransaction(transactionType = UPITransactionType.PAY, successRa
   return { transactionType, ...info };
 }
 
-// Function to simulate a mandate registration (uses mandate-specific codes)
+// Function to simulate a mandate registration
 function simulateMandateRegistration(successRate = 0.8) {
   const codes = Object.keys(MandateErrorCodes);
   let code;
@@ -222,8 +224,17 @@ function handleEdgeCase(code) {
   return { code: info.code, suggestedAction };
 }
 
-// Example usage:
-// console.log(simulateMandateRegistration(0.5));
-// Possible Output: { transactionType: 'Mandate Registration', code: 'AP01', description: 'Account blocked', type: 'Business', status: 'Rejected', handling: 'Account is blocked; contact bank.' }
+// Function to search for error codes by keyword in description
+function searchCodes(keyword) {
+  const lowerKeyword = keyword.toLowerCase();
+  const allCodes = { ...UPIErrorCodes, ...MandateErrorCodes };
+  return Object.entries(allCodes)
+    .filter(([, [description]]) => description.toLowerCase().includes(lowerKeyword))
+    .map(([code, [description, type, status, handling]]) => ({ code, description, type, status, handling }));
+}
 
-module.exports = { UPIStatus, UPITransactionType, UPIErrorCodes, MandateErrorCodes, getCodeInfo, simulateTransaction, simulateMandateRegistration, handleEdgeCase };
+// Example usage:
+// console.log(searchCodes('account'));
+// Possible Output: Array of objects with codes containing 'account' in description
+
+module.exports = { UPIStatus, UPITransactionType, UPIErrorCodes, MandateErrorCodes, getCodeInfo, simulateTransaction, simulateMandateRegistration, handleEdgeCase, searchCodes };
